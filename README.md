@@ -51,7 +51,7 @@ graph TB
         sqlite --> grafana
     end
 
-    sync -- "rsync over WiFi<br/>when in range" --> rsync_srv
+    sync -- "rsync over Tailscale<br/>any network" --> rsync_srv
     post -- "HTTPS<br/>when on WiFi" --> hass
     upd -- "git pull<br/>when on WiFi" --> GitHub[(GitHub)]
 ```
@@ -65,8 +65,9 @@ data processing are fully decoupled:
    and operational events to a JSONL event log. No network required.
 2. **Car off** — Pi detects the engine shutting down, syncs logs, and schedules
    a shutdown (with a 15-minute grace period in case the car restarts).
-3. **Home** — when the car is in WiFi range, cron syncs all logs to a file
-   server via rsync. Grafana reads the data from there.
+3. **Network available** — whenever the Pi has any network connection, cron
+   syncs all logs to a file server via rsync over Tailscale. Grafana reads
+   the data from there.
 
 All logs live in `~/log/` and are designed for post-mortem analysis. The event
 log (`events.jsonl`) captures every state transition — startup, connection,
@@ -81,18 +82,10 @@ off and back on 30 seconds later.
   connection takes about a minute. The car is already moving before the first
   sensor reading is logged.
 
-- **Rsync-based data delivery is old school.** The architecture relies on the
-  car being in home WiFi range for sync. There's no real-time streaming, no
-  mobile data path, and no retry/queueing beyond cron running every minute.
-  A more modern approach would use an MQTT or HTTP push when any network is
-  available, but rsync works fine for the "review drives later at home"
-  use case.
-
-- **Single car assumption.** The system assumes one Pi, one car, one ELM
-  adapter. Drive IDs are derived from CSV filenames with no car identifier.
-  The Grafana dashboards have no car selector. Supporting multiple cars would
-  require: a car ID in the CSV filenames and SQLite schema, a per-car
-  Bluetooth MAC in the `bt-addr` file, and dashboard variables to filter by car.
+- **No real-time streaming.** Sync runs via rsync over Tailscale, so it works
+  from any network the Pi can reach — not just home WiFi — but it's still
+  batch delivery every minute via cron, not live telemetry. Fine for the
+  "review drives later" use case; not suitable for live tracking.
 
 ## What it logs
 
@@ -101,6 +94,12 @@ off and back on 30 seconds later.
   fuel level, run time, barometric pressure, ELM voltage, PiSugar battery
 - **Event log** (`events.jsonl`) — structured operational events for debugging
 - **DTC log** (`dtc.log`) — diagnostic trouble codes (check engine light codes)
+
+## Grafana
+
+![Grafana OBD Drive Detail dashboard](doc/grafana-drive-detail.png)
+
+[Live example dashboard snapshot](https://snapshots.raintank.io/dashboard/snapshot/5QPIwr2gFuFneH95Gw4PRxBVjHdcNJSC?orgId=0&from=2026-04-16T17:17:45.678Z&to=2026-04-16T17:40:45.641Z&timezone=browser&var-drive_id=obd-20260416-121844-001DA5072049)
 
 ## Hardware
 
