@@ -130,9 +130,9 @@ def import_csv(db, csv_path):
         "SELECT row_count FROM drives WHERE drive_id = ?", (drive_id,)
     ).fetchone()
 
-    # Count data rows (subtract header and any comment lines)
+    # Count data rows (exclude header, comment lines, and blank lines from corruption)
     with open(csv_path) as f:
-        file_rows = sum(1 for line in f if not line.startswith("#")) - 1
+        file_rows = sum(1 for line in f if line.strip() and not line.startswith("#")) - 1
     if file_rows <= 0:
         return 0
 
@@ -190,9 +190,11 @@ def import_csv(db, csv_path):
     if skipped:
         print(f"  WARNING: skipped {skipped} corrupt rows in {filename}")
 
+    # Store file_rows (not rows_inserted) so the idempotency check converges even
+    # when some rows have unparseable timestamps — otherwise we re-import forever.
     db.execute(
         "INSERT INTO drives (drive_id, filename, imported_at, row_count, vin, bt_mac, hostname, wifi_mac) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (drive_id, filename, datetime.now().isoformat(), rows_inserted, vin, bt_mac, hostname, wifi_mac),
+        (drive_id, filename, datetime.now().isoformat(), file_rows, vin, bt_mac, hostname, wifi_mac),
     )
 
     return rows_inserted
