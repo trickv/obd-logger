@@ -13,6 +13,7 @@ from datetime import datetime
 
 import obd
 from pisugar import PiSugar3
+from tpms_probe import run_probe, should_run_probe
 
 # ECU sensors — these only return data when the ignition is on.
 # Used for car-on/off detection.
@@ -205,6 +206,24 @@ try:
 
     # Check DTCs on connect
     check_dtcs(connection)
+
+    # TPMS discovery probe — fires candidate Mode 22 / Mode 01 queries and
+    # dumps raw responses to ~/log/ for offline analysis. Best-effort:
+    # bounded by wall-clock, never aborts the main CSV loop.
+    try:
+        force_probe = len(sys.argv) > 1 and sys.argv[1] == "probe"
+        if should_run_probe(LOG_DIR, vin, force=force_probe):
+            log_event("tpms_probe_start", vin=vin, bt_mac=bt_mac)
+            probe_result = run_probe(
+                connection, vin, bt_mac, LOG_DIR, log_event,
+                max_seconds=30,
+                enable_at_ma=os.environ.get("TPMS_PROBE_AT_MA") == "1",
+            )
+            log_event("tpms_probe_complete", vin=vin, **probe_result)
+        else:
+            log_event("tpms_probe_skipped", vin=vin, reason="threshold_or_disabled")
+    except Exception:
+        log_event("tpms_probe_error", traceback=traceback.format_exc())
 
     if status == obd.OBDStatus.OBD_CONNECTED:
         log_event("ignition_off")
