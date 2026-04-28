@@ -108,7 +108,7 @@ def _build_command(mode, pid, desc):
         name=f"PROBE_{mode}{pid}",
         desc=desc,
         command=cmd_bytes,
-        bytes=0,
+        _bytes=0,
         decoder=lambda messages: messages,
         ecu=obd.ECU.ALL,
         fast=False,
