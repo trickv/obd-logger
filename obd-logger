@@ -262,7 +262,7 @@ try:
     NULL_THRESHOLD = 10
     rows_written = 0
     loop_start = time.monotonic()
-    MAX_LOOP_SECONDS = 3600
+    MAX_LOOP_SECONDS = 12 * 3600
     last_pisugar_check = 0
     last_dtc_check = 0
     last_status_print = 0
