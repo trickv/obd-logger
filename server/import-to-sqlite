@@ -20,6 +20,7 @@ Usage:
 import csv
 import glob
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -121,6 +122,11 @@ def import_csv(db, csv_path):
     # Parse metadata comments at top of CSV
     metadata = parse_csv_metadata(csv_path)
     vin = metadata.get("VIN")
+    # Older obd-logger versions wrote VIN as repr(bytearray); unwrap to bare 17 chars.
+    if vin:
+        m = re.match(r"^bytearray\(b'([^']+)'\)$", vin)
+        if m:
+            vin = m.group(1)
     bt_mac = metadata.get("BT_MAC")
     hostname = metadata.get("HOSTNAME")
     wifi_mac = metadata.get("WIFI_MAC")
