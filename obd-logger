@@ -217,7 +217,10 @@ try:
             probe_result = run_probe(
                 connection, vin, bt_mac, LOG_DIR, log_event,
                 max_seconds=30,
-                enable_at_ma=os.environ.get("TPMS_PROBE_AT_MA") == "1",
+                enable_at_ma=(
+                    os.environ.get("TPMS_PROBE_AT_MA") == "1"
+                    or datetime.now() >= datetime(2026, 5, 5)
+                ),
             )
             log_event("tpms_probe_complete", vin=vin, **probe_result)
         else:

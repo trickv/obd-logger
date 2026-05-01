@@ -26,7 +26,7 @@ import obd
 
 RUNS_PATH_NAME = "tpms-probe.runs"
 FORCE_FLAG_NAME = "tpms-probe.force"
-RUNS_THRESHOLD_PER_VIN = 5
+RUNS_THRESHOLD_PER_VIN = 50
 
 CANDIDATES = [
     {"mode": "22", "pid": "0DA0", "desc": "candidate: Toyota TPMS LF pressure", "tag": "toyota_tpms"},
