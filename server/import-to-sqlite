@@ -120,12 +120,28 @@ def init_db(db):
             timestamp   TEXT NOT NULL,
             time_unix   REAL NOT NULL,
             hostname    TEXT,
+            wifi_mac    TEXT,
             battery_pct REAL,
             charging    INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_pisugar_time ON pisugar_readings(time_unix);
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_pisugar_host_ts ON pisugar_readings(hostname, timestamp);
     """)
+    # Migration: add wifi_mac to existing pisugar_readings tables.
+    try:
+        db.execute("ALTER TABLE pisugar_readings ADD COLUMN wifi_mac TEXT")
+    except sqlite3.OperationalError:
+        pass
+    # Unique index on (wifi_mac, timestamp) — wifi_mac is the durable per-Pi
+    # identifier, hostnames can collide or be reassigned. Drop the older
+    # (hostname, timestamp) index if it's still around.
+    try:
+        db.execute("DROP INDEX IF EXISTS idx_pisugar_host_ts")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_pisugar_mac_ts ON pisugar_readings(wifi_mac, timestamp)")
+    except sqlite3.OperationalError:
+        pass
 
 
 def parse_csv_metadata(csv_path):
@@ -264,8 +280,8 @@ def import_pisugar_csv(db, csv_path):
                 charging = None
             try:
                 db.execute(
-                    "INSERT INTO pisugar_readings (timestamp, time_unix, hostname, battery_pct, charging) VALUES (?, ?, ?, ?, ?)",
-                    (ts, time_unix, row.get("hostname", ""), bat, charging),
+                    "INSERT INTO pisugar_readings (timestamp, time_unix, hostname, wifi_mac, battery_pct, charging) VALUES (?, ?, ?, ?, ?, ?)",
+                    (ts, time_unix, row.get("hostname", ""), row.get("wifi_mac", ""), bat, charging),
                 )
                 rows_inserted += 1
             except sqlite3.IntegrityError:

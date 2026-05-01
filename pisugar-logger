@@ -13,6 +13,17 @@ from pisugar import PiSugar3
 LOG = os.path.expanduser("~/log/pisugar.csv")
 HOSTNAME = socket.gethostname()
 
+
+def get_wifi_mac():
+    try:
+        with open("/sys/class/net/wlan0/address") as f:
+            return f.read().strip().upper()
+    except FileNotFoundError:
+        return "unknown"
+
+
+WIFI_MAC = get_wifi_mac()
+
 ps = PiSugar3()
 bat = ps.get_battery_percentage().value
 charging = ps.get_charging_status().value
@@ -20,5 +31,5 @@ charging = ps.get_charging_status().value
 need_header = not os.path.exists(LOG) or os.path.getsize(LOG) == 0
 with open(LOG, "a") as f:
     if need_header:
-        f.write("timestamp,hostname,battery_pct,charging\n")
-    f.write(f"{datetime.now().isoformat()},{HOSTNAME},{bat},{charging}\n")
+        f.write("timestamp,hostname,wifi_mac,battery_pct,charging\n")
+    f.write(f"{datetime.now().isoformat()},{HOSTNAME},{WIFI_MAC},{bat},{charging}\n")
