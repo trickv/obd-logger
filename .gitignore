@@ -1,5 +1,7 @@
 .runtime/
 .claude/commands/
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
 .logs/
 .beads/
 
