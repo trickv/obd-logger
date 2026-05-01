@@ -2,3 +2,4 @@ PATH=$HOME/obd/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:
 * * * * * $HOME/obd/update
 * * * * * $HOME/obd/post-to-hass
 * * * * * $HOME/obd/battery-check
+* * * * * $HOME/obd/pisugar-logger

@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""Append one PiSugar reading to ~/log/pisugar.csv. Cron-friendly one-shot.
+
+Runs independently of obd-logger so battery state is captured continuously,
+including during long stops when the car is off and obd-logger has exited.
+"""
+
+import os
+import socket
+from datetime import datetime
+from pisugar import PiSugar3
+
+LOG = os.path.expanduser("~/log/pisugar.csv")
+HOSTNAME = socket.gethostname()
+
+ps = PiSugar3()
+bat = ps.get_battery_percentage().value
+charging = ps.get_charging_status().value
+
+need_header = not os.path.exists(LOG) or os.path.getsize(LOG) == 0
+with open(LOG, "a") as f:
+    if need_header:
+        f.write("timestamp,hostname,battery_pct,charging\n")
+    f.write(f"{datetime.now().isoformat()},{HOSTNAME},{bat},{charging}\n")
