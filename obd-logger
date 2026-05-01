@@ -30,6 +30,11 @@ ECU_SENSORS = [
     (obd.commands.RUN_TIME, "run_time_sec"),
     (obd.commands.BAROMETRIC_PRESSURE, "baro_kpa"),
     (obd.commands.FUEL_RATE, "fuel_rate_lph"),
+    (obd.commands.SHORT_FUEL_TRIM_1, "short_fuel_trim_1_pct"),
+    (obd.commands.LONG_FUEL_TRIM_1, "long_fuel_trim_1_pct"),
+    (obd.commands.AMBIANT_AIR_TEMP, "ambient_air_temp_c"),
+    (obd.commands.CATALYST_TEMP_B1S1, "catalyst_temp_b1s1_c"),
+    (obd.commands.CATALYST_TEMP_B2S1, "catalyst_temp_b2s1_c"),
 ]
 # Adapter sensors — always return data regardless of ignition state.
 # Logged but NOT used for car-on/off detection.
