@@ -44,6 +44,7 @@ NUMERIC_COLUMNS = [
     "short_fuel_trim_1_pct", "long_fuel_trim_1_pct",
     "ambient_air_temp_c",
     "catalyst_temp_b1s1_c", "catalyst_temp_b2s1_c",
+    "oil_temp_c", "control_module_voltage", "distance_since_dtc_clear_km",
     "elm_voltage", "mpg", "pisugar_battery_pct",
     "poll_time_ms", "sensors_collected", "error_count",
 ]
@@ -72,6 +73,9 @@ def init_db(db):
             ambient_air_temp_c    REAL,
             catalyst_temp_b1s1_c  REAL,
             catalyst_temp_b2s1_c  REAL,
+            oil_temp_c            REAL,
+            control_module_voltage REAL,
+            distance_since_dtc_clear_km REAL,
             elm_voltage    REAL,
             mpg            REAL,
             pisugar_charging INTEGER,
@@ -102,7 +106,9 @@ def init_db(db):
     # Add new sensor columns to existing DBs (REAL nullable).
     for col in ("short_fuel_trim_1_pct", "long_fuel_trim_1_pct",
                 "ambient_air_temp_c",
-                "catalyst_temp_b1s1_c", "catalyst_temp_b2s1_c"):
+                "catalyst_temp_b1s1_c", "catalyst_temp_b2s1_c",
+                "oil_temp_c", "control_module_voltage",
+                "distance_since_dtc_clear_km"):
         try:
             db.execute(f"ALTER TABLE readings ADD COLUMN {col} REAL")
         except sqlite3.OperationalError:

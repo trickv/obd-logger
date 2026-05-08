@@ -34,6 +34,9 @@ ECU_SENSORS = [
     (obd.commands.AMBIANT_AIR_TEMP, "ambient_air_temp_c"),
     (obd.commands.CATALYST_TEMP_B1S1, "catalyst_temp_b1s1_c"),
     (obd.commands.CATALYST_TEMP_B2S1, "catalyst_temp_b2s1_c"),
+    (obd.commands.OIL_TEMP, "oil_temp_c"),
+    (obd.commands.CONTROL_MODULE_VOLTAGE, "control_module_voltage"),
+    (obd.commands.DISTANCE_SINCE_DTC_CLEAR, "distance_since_dtc_clear_km"),
 ]
 # Adapter sensors — always return data regardless of ignition state.
 # Logged but NOT used for car-on/off detection.
