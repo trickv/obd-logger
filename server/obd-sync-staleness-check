@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+#
+# Server-side staleness alarm for OBD data. Runs on litecoin (NOT the Pi),
+# e.g. every 3 hours from cron. Alerts via Home Assistant when no fresh OBD
+# data has arrived for THRESHOLD_DAYS.
+#
+# This detects "the Pi stopped syncing" from the *receiving* end, so it fires
+# even when the Pi is offline / unreachable — the exact blind spot that let a
+# ~month-long outage (Jul 2026) go unnoticed. The Pi-side `update` self-logs to
+# ~/log/update.log to explain *why* a stall happened; this script is what tells
+# you a stall is *happening*.
+#
+# Notifies via Home Assistant: it publishes sensor.obd_sync_staleness_days on
+# every run, and fires a persistent_notification once per stale episode
+# (re-armed automatically when data comes back).
+
+set -u
+
+DB="${OBD_DB:-$HOME/docker-services/obd/log/obd.sqlite}"
+THRESHOLD_DAYS="${OBD_STALE_DAYS:-5}"
+HASS_URL="${HASS_URL:-https://hass.vanstaveren.us/api}"
+STATE_DIR="$HOME/.local/state/obd-monitor"
+STATE="$STATE_DIR/staleness.state"   # contents: "ok" or "alerted"
+
+mkdir -p "$STATE_DIR"
+
+# --- Locate a Home Assistant long-lived token -------------------------------
+# Checked in order: $HASS_TOKEN, a dedicated token file, or a *decrypted*
+# secret.sh (git-crypt must be unlocked for that to work).
+HASS_TOKEN="${HASS_TOKEN:-}"
+TOKEN_FILE="${OBD_HASS_TOKEN_FILE:-$HOME/.config/obd-monitor/hass-token}"
+if [ -z "$HASS_TOKEN" ] && [ -r "$TOKEN_FILE" ]; then
+    HASS_TOKEN="$(tr -d '[:space:]' < "$TOKEN_FILE")"
+fi
+if [ -z "$HASS_TOKEN" ]; then
+    secret="$HOME/src/github.com/trickv/shiny-adventure/secret.sh"
+    if [ -r "$secret" ] && ! head -c 9 "$secret" | grep -q 'GITCRYPT'; then
+        # shellcheck disable=SC1090
+        source "$secret" && HASS_TOKEN="${hass_llac:-}"
+    fi
+fi
+
+# --- How stale is our newest data? ------------------------------------------
+age_days="$(sqlite3 "$DB" \
+    "SELECT ROUND(julianday('now') - julianday(MAX(timestamp)), 3) FROM readings;" 2>/dev/null)"
+if [ -z "$age_days" ] || [ "$age_days" = "" ]; then
+    echo "obd-staleness: cannot read newest timestamp from $DB" >&2
+    exit 1
+fi
+
+post_hass() {  # $1=entity  $2=state  $3=friendly  $4=extra-json
+    [ -n "$HASS_TOKEN" ] || return 0
+    curl -sS -m 15 -X POST \
+        -H "Authorization: Bearer $HASS_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"state\": \"$2\", \"attributes\": {\"friendly_name\": \"$3\"$4}}" \
+        "$HASS_URL/states/$1" >/dev/null
+}
+
+fire_notification() {  # $1=title  $2=message
+    [ -n "$HASS_TOKEN" ] || return 0
+    curl -sS -m 15 -X POST \
+        -H "Authorization: Bearer $HASS_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"notification_id\": \"obd_sync_stale\", \"title\": \"$1\", \"message\": \"$2\"}" \
+        "$HASS_URL/services/persistent_notification/create" >/dev/null
+}
+
+# Always publish the current staleness as a sensor (nice for a dashboard/graph).
+post_hass "sensor.obd_sync_staleness_days" "$age_days" "OBD sync staleness" \
+    ', "unit_of_measurement": "d", "icon": "mdi:database-clock"'
+
+# --- Threshold crossing with dedupe -----------------------------------------
+prev="$(cat "$STATE" 2>/dev/null || echo ok)"
+is_stale="$(awk -v a="$age_days" -v t="$THRESHOLD_DAYS" 'BEGIN{print (a+0 >= t+0) ? 1 : 0}')"
+
+if [ "$is_stale" = 1 ] && [ "$prev" != alerted ]; then
+    msg="No OBD data received in ${age_days} days (threshold ${THRESHOLD_DAYS}d). The Sienna Pi has not synced — check tethering/WiFi, and ~/log/update.log on the Pi once it reconnects."
+    echo "obd-staleness: ALERT — $msg" >&2
+    fire_notification "OBD sync stale (${age_days}d)" "$msg"
+    echo alerted > "$STATE"
+elif [ "$is_stale" = 0 ] && [ "$prev" = alerted ]; then
+    echo "obd-staleness: recovered (age ${age_days}d) — clearing notification" >&2
+    [ -n "$HASS_TOKEN" ] && curl -sS -m 15 -X POST \
+        -H "Authorization: Bearer $HASS_TOKEN" -H "Content-Type: application/json" \
+        -d '{"notification_id": "obd_sync_stale"}' \
+        "$HASS_URL/services/persistent_notification/dismiss" >/dev/null
+    echo ok > "$STATE"
+fi
+
+# Warn (to syslog via cron) if we couldn't post because no token is configured.
+[ -z "$HASS_TOKEN" ] && echo "obd-staleness: no HASS token found; skipped HASS post (age ${age_days}d, stale=${is_stale}). Set $TOKEN_FILE." >&2
+
+exit 0
