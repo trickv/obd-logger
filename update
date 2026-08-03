@@ -8,36 +8,64 @@ set -u
 
 LOCKFILE="/tmp/obd-update.lock"
 MARKER="$HOME/log/last-update"
+LOGFILE="$HOME/log/update.log"
 COOLDOWN=900  # 15 minutes in seconds
 
-# Skip if last successful run was recent
+# rsync target (must match sync-data) — used for a real reachability probe.
+RSYNC_HOST="100.124.139.90"
+RSYNC_PORT="8730"
+
+mkdir -p "$HOME/log"
+
+# Append a timestamped line to the synced update.log so we can diagnose why
+# a run did (or didn't) sync without needing to SSH into the Pi. Kept bounded.
+logmsg() {
+    printf '%s %s\n' "$(date -Is 2>/dev/null || date)" "$*" >> "$LOGFILE"
+}
+# Keep update.log from growing without bound (e.g. during a prolonged wedge).
+if [ -f "$LOGFILE" ] && [ "$(wc -l < "$LOGFILE" 2>/dev/null || echo 0)" -gt 5000 ]; then
+    tail -n 2000 "$LOGFILE" > "$LOGFILE.tmp" && mv "$LOGFILE.tmp" "$LOGFILE"
+fi
+
+# Skip if last successful run was recent. Guard against clock skew: a negative
+# age means the marker is in the future (RTC-less Pi booted with a bad clock),
+# which previously could make this cooldown skip forever — treat it as expired.
 if [ -f "$MARKER" ]; then
     last=$(stat -c %Y "$MARKER")
     now=$(date +%s)
     age=$(( now - last ))
-    if [ "$age" -lt "$COOLDOWN" ]; then
+    if [ "$age" -ge 0 ] && [ "$age" -lt "$COOLDOWN" ]; then
         exit 0
+    fi
+    if [ "$age" -lt 0 ]; then
+        logmsg "WARN cooldown marker is in the future (age=${age}s) — clock skew; proceeding"
     fi
 fi
 
-# Acquire lock (non-blocking) to prevent concurrent runs
+# Acquire lock (non-blocking) to prevent concurrent runs. If we can't get it,
+# something is already running — log which pid and how old, so a wedged holder
+# (the classic "cron sync silently stopped" cause) is visible in update.log.
 exec 9>"$LOCKFILE"
 if ! flock -n 9; then
-    echo "update: another instance is running, skipping"
+    holder=$(fuser "$LOCKFILE" 2>/dev/null | tr -d ' ')
+    holder_age=""
+    [ -n "$holder" ] && holder_age=$(ps -o etimes= -p "$holder" 2>/dev/null | tr -d ' ')
+    logmsg "SKIP lock held by pid=${holder:-?} age=${holder_age:-?}s"
     exit 0
 fi
 
-# Quick connectivity check — bail immediately if offline
+# Quick connectivity check — bail immediately if offline.
 if ! ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
     exit 0
 fi
 
-# Ensure Tailscale is up (needed for sync-data)
+# Ensure Tailscale is up (needed for sync-data). Bounded by a timeout so a
+# hung `tailscale up` can never hold the lock forever (it used to be unguarded).
 if command -v tailscale &>/dev/null; then
-    tailscale up --accept-routes 2>/dev/null || true
+    timeout 30 tailscale up --accept-routes 2>/dev/null || logmsg "WARN tailscale up failed/timed out"
 fi
 
-cd $HOME/obd
+cd "$HOME/obd" || { logmsg "ERROR cannot cd to $HOME/obd"; exit 1; }
 
 # Pull with a timeout so a bad connection doesn't block forever
 if timeout 120 git pull -q; then
@@ -49,10 +77,22 @@ if timeout 120 git pull -q; then
     ./systemd/install
 fi
 
-mkdir -p $HOME/log
+# Verify we can actually reach the rsync target over the tunnel before syncing.
+# "Internet up but tunnel down" was the exact failure mode that hid a month-long
+# outage: the 1.1.1.1 check passed while the Tailscale path to the server was dead.
+if ! timeout 5 bash -c ": >/dev/tcp/${RSYNC_HOST}/${RSYNC_PORT}" 2>/dev/null; then
+    logmsg "SKIP online but rsync target ${RSYNC_HOST}:${RSYNC_PORT} unreachable (tunnel down?)"
+    touch "$MARKER"
+    exit 0
+fi
 
-# Sync data (also benefits from running frequently)
-timeout 300 ./sync-data || true
+# Sync data (also benefits from running frequently). sync-data now exits
+# non-zero on failure and only marks last-sync on success.
+if timeout 300 ./sync-data; then
+    logmsg "OK sync-data succeeded"
+else
+    logmsg "FAIL sync-data exit=$? (target reachable but rsync failed)"
+fi
 
-# Mark successful run
+# Mark run complete (resets the cooldown regardless of sync outcome).
 touch "$MARKER"

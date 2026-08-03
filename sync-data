@@ -3,6 +3,13 @@
 # Sync logged data to the server via rsync over Tailscale.
 # The Pi and the server must both be on the same Tailscale network.
 # The rsync daemon runs on the server (port 8730).
+#
+# Exits non-zero if the rsync fails, and only updates the last-sync marker on
+# success — so callers (and the staleness alarm on the server) can tell a real
+# sync from a silent failure. A failed rsync used to be swallowed by `|| true`
+# in the caller, which helped hide a month-long outage.
+
+set -u
 
 # Use Tailscale IP for litecoin so this works from any network.
 RSYNC_HOST="100.124.139.90"
@@ -10,5 +17,10 @@ RSYNC_PORT="8730"
 
 export RSYNC_PASSWORD=obd
 
-rsync -av --partial $HOME/log rsync://obd@${RSYNC_HOST}:${RSYNC_PORT}/data
-touch $HOME/log/last-sync
+if rsync -av --partial "$HOME/log" "rsync://obd@${RSYNC_HOST}:${RSYNC_PORT}/data"; then
+    touch "$HOME/log/last-sync"
+else
+    rc=$?
+    echo "sync-data: rsync failed (exit $rc)" >&2
+    exit "$rc"
+fi
